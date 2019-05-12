@@ -18,8 +18,8 @@
 set -xe
 
 : ${HELM_VERSION:="v2.13.1"}
-: ${KUBE_VERSION:="v1.13.4"}
-: ${MINIKUBE_VERSION:="v0.30.0"}
+: ${KUBE_VERSION:="v1.13.6"}
+#: ${MINIKUBE_VERSION:="v0.30.0"}
 : ${CALICO_VERSION:="v3.3"}
 
 : "${HTTP_PROXY:=""}"
@@ -63,8 +63,8 @@ sudo add-apt-repository "deb https://download.ceph.com/debian-mimic/
 ${RELEASE_NAME} main"
 sudo -E apt-get update
 # NOTE(srwilkers): Pin docker version to validated docker version for k8s 1.12.2
+#   docker.io=18.06.1-0ubuntu1.2~16.04.1 \
 sudo -E apt-get install -y \
-    docker.io=18.06.1-0ubuntu1.2~16.04.1 \
     socat \
     jq \
     util-linux \
@@ -72,7 +72,7 @@ sudo -E apt-get install -y \
     rbd-nbd \
     nfs-common \
     bridge-utils \
-    libxtables11
+    libxtables12
 
 sudo -E tee /etc/modprobe.d/rbd.conf << EOF
 install rbd /bin/true
@@ -82,14 +82,14 @@ configure_resolvconf
 
 # Install minikube and kubectl
 URL="https://storage.googleapis.com"
-sudo -E curl -sSLo /usr/local/bin/minikube \
-  "${URL}"/minikube/releases/"${MINIKUBE_VERSION}"/minikube-linux-amd64
+#sudo -E curl -sSLo /usr/local/bin/minikube \
+#  "${URL}"/minikube/releases/"${MINIKUBE_VERSION}"/minikube-linux-amd64
 
-sudo -E curl -sSLo /usr/local/bin/kubectl \
-  "${URL}"/kubernetes-release/release/"${KUBE_VERSION}"/bin/linux/amd64/kubectl
+#sudo -E curl -sSLo /usr/local/bin/kubectl \
+#  "${URL}"/kubernetes-release/release/"${KUBE_VERSION}"/bin/linux/amd64/kubectl
 
-sudo -E chmod +x /usr/local/bin/minikube
-sudo -E chmod +x /usr/local/bin/kubectl
+#sudo -E chmod +x /usr/local/bin/minikube
+#sudo -E chmod +x /usr/local/bin/kubectl
 
 # Install Helm
 TMP_DIR=$(mktemp -d)
@@ -102,39 +102,39 @@ rm -rf "${TMP_DIR}"
 
 # NOTE: Deploy kubenetes using minikube. A CNI that supports network policy is
 # required for validation; use calico for simplicity.
-sudo -E minikube config set embed-certs true
-sudo -E minikube config set kubernetes-version "${KUBE_VERSION}"
-sudo -E minikube config set vm-driver none
-sudo -E minikube addons disable addon-manager
-sudo -E minikube addons disable dashboard
+#sudo -E minikube config set embed-certs true
+#sudo -E minikube config set kubernetes-version "${KUBE_VERSION}"
+#sudo -E minikube config set vm-driver none
+#sudo -E minikube addons disable addon-manager
+#sudo -E minikube addons disable dashboard
 
-export CHANGE_MINIKUBE_NONE_USER=true
-sudo -E minikube start \
-  --docker-env HTTP_PROXY="${HTTP_PROXY}" \
-  --docker-env HTTPS_PROXY="${HTTPS_PROXY}" \
-  --docker-env NO_PROXY="${NO_PROXY},10.96.0.0/12" \
-  --extra-config=kubelet.network-plugin=cni \
-  --extra-config=controller-manager.allocate-node-cidrs=true \
-  --extra-config=controller-manager.cluster-cidr=192.168.0.0/16
+#export CHANGE_MINIKUBE_NONE_USER=true
+#sudo -E minikube start \
+#  --docker-env HTTP_PROXY="${HTTP_PROXY}" \
+#  --docker-env HTTPS_PROXY="${HTTPS_PROXY}" \
+#  --docker-env NO_PROXY="${NO_PROXY},10.96.0.0/12" \
+#  --extra-config=kubelet.network-plugin=cni \
+#  --extra-config=controller-manager.allocate-node-cidrs=true \
+#  --extra-config=controller-manager.cluster-cidr=192.168.0.0/16
 
-kubectl apply -f \
-  https://docs.projectcalico.org/"${CALICO_VERSION}"/getting-started/kubernetes/installation/hosted/rbac-kdd.yaml
-kubectl apply -f \
-  https://docs.projectcalico.org/"${CALICO_VERSION}"/getting-started/kubernetes/installation/hosted/kubernetes-datastore/calico-networking/1.7/calico.yaml
+#kubectl apply -f \
+#  https://docs.projectcalico.org/"${CALICO_VERSION}"/getting-started/kubernetes/installation/hosted/rbac-kdd.yaml
+#kubectl apply -f \
+#  https://docs.projectcalico.org/"${CALICO_VERSION}"/getting-started/kubernetes/installation/hosted/kubernetes-datastore/calico-networking/1.7/calico.yaml
 
 # NOTE: Wait for node to be ready.
-kubectl wait --timeout=240s --for=condition=Ready nodes/minikube
+#kubectl wait --timeout=240s --for=condition=Ready nodes/minikube
 
 # NOTE: Wait for dns to be running.
-END=$(($(date +%s) + 240))
-until kubectl --namespace=kube-system \
-        get pods -l k8s-app=kube-dns --no-headers -o name | grep -q "^pod/coredns"; do
-  NOW=$(date +%s)
-  [ "${NOW}" -gt "${END}" ] && exit 1
-  echo "still waiting for dns"
-  sleep 10
-done
-kubectl --namespace=kube-system wait --timeout=240s --for=condition=Ready pods -l k8s-app=kube-dns
+#END=$(($(date +%s) + 240))
+#until kubectl --namespace=kube-system \
+#        get pods -l k8s-app=kube-dns --no-headers -o name | grep -q "^pod/coredns"; do
+#  NOW=$(date +%s)
+#  [ "${NOW}" -gt "${END}" ] && exit 1
+#  echo "still waiting for dns"
+#  sleep 10
+#done
+#kubectl --namespace=kube-system wait --timeout=240s --for=condition=Ready pods -l k8s-app=kube-dns
 
 # Deploy helm/tiller into the cluster
 kubectl create -n kube-system serviceaccount helm-tiller
@@ -190,12 +190,15 @@ helm repo update
 make
 
 # Set required labels on host(s)
-kubectl label nodes --all openstack-control-plane=enabled
-kubectl label nodes --all openstack-compute-node=enabled
+kubectl label nodes master openstack-control-plane=enabled
+kubectl label nodes node1 openstack-compute-node=enabled
+kubectl label nodes node2 openstack-compute-node=enabled
 kubectl label nodes --all openvswitch=enabled
 kubectl label nodes --all linuxbridge=enabled
-kubectl label nodes --all ceph-mon=enabled
-kubectl label nodes --all ceph-osd=enabled
-kubectl label nodes --all ceph-mds=enabled
-kubectl label nodes --all ceph-rgw=enabled
-kubectl label nodes --all ceph-mgr=enabled
+kubectl label nodes master ceph-mon=enabled
+kubectl label nodes node1 ceph-osd=enabled
+kubectl label nodes node2 ceph-osd=enabled
+kubectl label nodes master ceph-mds=enabled
+kubectl label nodes master ceph-rgw=enabled
+kubectl label nodes node1 ceph-mgr=enabled
+kubectl label nodes node2 ceph-mgr=enabled

@@ -18,6 +18,7 @@ set -xe
 
 sudo apt-get update
 sudo apt-get install --no-install-recommends -y \
+        uuid-runtime \
         ca-certificates \
         git \
         make \
